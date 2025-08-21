@@ -1,0 +1,8 @@
+queue_system/
+├─ app.py
+├─ templates/
+│  ├─ kiosk.html
+│  ├─ operator.html
+│  └─ display.html
+└─ static/
+   └─ main.js
