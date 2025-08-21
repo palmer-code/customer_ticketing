@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Operator - Counter {{counter}}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: Arial, sans-serif; padding:20px; text-align:center; }
+    h1 { font-size:28px; }
+    button { font-size:24px; padding:16px 24px; margin:10px; }
+    #now { font-size:36px; margin-top:20px; color:blue; }
+    #status { margin-top:20px; }
+  </style>
+</head>
+<body>
+  <h1>Counter {{counter}}</h1>
+  <button onclick="callNext()">Call Next</button>
+  <div id="now">Now Serving: -</div>
+  <div id="status"></div>
+<script>
+function callNext() {
+  fetch('/operator/{{counter}}/call', {method: 'POST'})
+    .then(r => r.json())
+    .then(j => {
+      if (j.ok) {
+        document.getElementById('now').innerText = 'Now Serving: ' + j.ticket;
+        document.getElementById('status').innerText = 'Announced: ' + j.announce;
+      } else {
+        document.getElementById('status').innerText = j.message || 'No tickets';
+      }
+    })
+    .catch(e => document.getElementById('status').innerText = 'Network error');
+}
+</script>
+</body>
+</html>
