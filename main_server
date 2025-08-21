@@ -1,0 +1,200 @@
+# app.py
+import sqlite3
+import threading
+import time
+from flask import Flask, render_template, jsonify, request, redirect, url_for
+import pyttsx3
+import win32print
+
+DB = 'queue.db'
+SERVER_IP = '0.0.0.0'
+PORT = 5000
+
+# categories -> prefix and default counter mapping
+CATEGORIES = {
+    "A": {"label": "Account Opening", "default_counter": 1},
+    "L": {"label": "Loan Enquiries",  "default_counter": 2},
+    "G": {"label": "General Queries", "default_counter": 3}
+}
+# configure which counter handles which category if needed
+# COUNTER_MAP = {1: "A", 2: "L", 3: "G"} # optional
+
+# Initialize app
+app = Flask(__name__, static_folder='static', template_folder='templates')
+
+# In-memory queues (list of tuples (id, number))
+queues = {k: [] for k in CATEGORIES.keys()}
+
+# TTS engine (thread-safe wrapper)
+tts_engine = pyttsx3.init()
+tts_lock = threading.Lock()
+
+def tts_say(text):
+    def _speak(t):
+        with tts_lock:
+            tts_engine.say(t)
+            tts_engine.runAndWait()
+    t = threading.Thread(target=_speak, args=(text,))
+    t.daemon = True
+    t.start()
+
+# Printing (Windows)
+def print_ticket(prefix, number, counter):
+    # Format ticket text
+    ticket_text = (
+        "CUSTOMER SERVICE CENTER\n"
+        "-------------------------\n"
+        f"Ticket No: {prefix}{number}\n"
+        f"Counter: {counter}\n"
+        f"Time: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        "-------------------------\n"
+        "Please wait for your number to be called.\n\n\n"
+    )
+    try:
+        # use default printer; change to specific name if needed
+        printer_name = win32print.GetDefaultPrinter()
+        hPrinter = win32print.OpenPrinter(printer_name)
+        try:
+            hJob = win32print.StartDocPrinter(hPrinter, 1, ("Ticket", None, "RAW"))
+            win32print.StartPagePrinter(hPrinter)
+            win32print.WritePrinter(hPrinter, ticket_text.encode('utf-8'))
+            win32print.EndPagePrinter(hPrinter)
+            win32print.EndDocPrinter(hPrinter)
+        finally:
+            win32print.ClosePrinter(hPrinter)
+    except Exception as e:
+        print("Printing error:", e)
+
+# SQLite helpers
+def init_db():
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS tickets
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  prefix TEXT,
+                  number INTEGER,
+                  counter INTEGER,
+                  status TEXT,
+                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  served_at TIMESTAMP)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS counters
+                 (id INTEGER PRIMARY KEY, name TEXT)''')
+    conn.commit()
+    conn.close()
+
+def add_ticket_to_db(prefix, number, counter):
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    c.execute("INSERT INTO tickets (prefix, number, counter, status) VALUES (?, ?, ?, ?)",
+              (prefix, number, counter, 'waiting'))
+    conn.commit()
+    conn.close()
+
+def mark_served_in_db(prefix, number):
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    c.execute("UPDATE tickets SET status='served', served_at=CURRENT_TIMESTAMP WHERE prefix=? AND number=?",
+              (prefix, number))
+    conn.commit()
+    conn.close()
+
+# Ticket number counters (persist between runs? For now in-db initial load)
+ticket_counters = {}
+
+def load_counters():
+    # load latest number for each prefix from DB
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    for k in CATEGORIES.keys():
+        c.execute("SELECT MAX(number) FROM tickets WHERE prefix=?", (k,))
+        row = c.fetchone()
+        maxn = row[0] if row and row[0] else None
+        ticket_counters[k] = maxn if maxn else 100  # start from 101 next increment
+    conn.close()
+
+@app.route('/')
+def index():
+    return redirect(url_for('kiosk'))
+
+@app.route('/kiosk')
+def kiosk():
+    return render_template('kiosk.html', categories=CATEGORIES)
+
+@app.route('/kiosk/take/<prefix>', methods=['POST'])
+def take_ticket(prefix):
+    if prefix not in CATEGORIES:
+        return jsonify({"ok": False, "error": "Invalid category"}), 400
+    # increment number
+    ticket_counters[prefix] += 1
+    num = ticket_counters[prefix]
+    # assign default counter (could be smarter)
+    counter = CATEGORIES[prefix]['default_counter']
+    # add to in-memory queue and DB
+    queues[prefix].append((num, counter))
+    add_ticket_to_db(prefix, num, counter)
+    # print receipt (non-blocking thread)
+    threading.Thread(target=print_ticket, args=(prefix, num, counter), daemon=True).start()
+    return jsonify({"ok": True, "ticket": f"{prefix}{num}", "counter": counter})
+
+@app.route('/operator/<int:counter>')
+def operator(counter):
+    # show operator interface, show which categories they handle (optional)
+    return render_template('operator.html', counter=counter, categories=CATEGORIES)
+
+@app.route('/operator/<int:counter>/call', methods=['POST'])
+def call_next(counter):
+    # determine which category to serve: simplest is to check categories with default_counter==counter
+    # Primarily serve the earliest waiting ticket for categories mapped to this counter.
+    # Build candidate list
+    candidates = []
+    for prefix, meta in CATEGORIES.items():
+        if meta.get('default_counter') == counter:
+            if queues[prefix]:
+                # inspect first in queue
+                num, assigned_counter = queues[prefix][0]
+                candidates.append((prefix, num, assigned_counter))
+    # If multiple categories map to counter, serve the one with earliest arrival => we inserted FIFO by append
+    if not candidates:
+        return jsonify({"ok": False, "message": "No tickets in queue"}), 200
+    # serve first available according to queue order
+    served = None
+    for prefix in CATEGORIES.keys():
+        # prioritize by global category order to get deterministic behavior
+        if CATEGORIES[prefix].get('default_counter') == counter and queues[prefix]:
+            num, assigned_counter = queues[prefix].pop(0)
+            served = (prefix, num, assigned_counter)
+            break
+    if not served:
+        return jsonify({"ok": False, "message": "No tickets"}), 200
+    prefix, num, assigned_counter = served
+    # mark served in DB
+    mark_served_in_db(prefix, num)
+    # announce and return served ticket
+    announce_text = f"Ticket {prefix}{num}, please proceed to counter {counter}"
+    tts_say(announce_text)
+    return jsonify({"ok": True, "ticket": f"{prefix}{num}", "counter": counter, "announce": announce_text})
+
+@app.route('/display')
+def display():
+    return render_template('display.html')
+
+@app.route('/api/status')
+def api_status():
+    # return the queue lengths and now serving (last served per counter)
+    qlens = {k: len(v) for k, v in queues.items()}
+    # last served is not tracked in memory; query last served from DB
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    last_served = {}
+    for prefix in CATEGORIES.keys():
+        c.execute("SELECT number, counter, served_at FROM tickets WHERE prefix=? AND status='served' ORDER BY served_at DESC LIMIT 1", (prefix,))
+        r = c.fetchone()
+        last_served[prefix] = {"number": r[0], "counter": r[1], "served_at": r[2]} if r else None
+    conn.close()
+    return jsonify({"queues": qlens, "last_served": last_served})
+
+if __name__ == '__main__':
+    init_db()
+    load_counters()
+    print("Starting server on", SERVER_IP, "port", PORT)
+    app.run(host=SERVER_IP, port=PORT, debug=False)
