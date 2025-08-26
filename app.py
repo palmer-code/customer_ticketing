@@ -4,7 +4,10 @@ import threading
 import time
 from flask import Flask, render_template, jsonify, request, redirect, url_for
 import pyttsx3
-import win32print
+import platform
+
+if platform.system() == 'Windows':
+    import win32print
 
 DB = 'queue.db'
 SERVER_IP = '0.0.0.0'
@@ -17,7 +20,7 @@ CATEGORIES = {
     "G": {"label": "General Queries", "default_counter": 3}
 }
 # configure which counter handles which category if needed
-# COUNTER_MAP = {1: "A", 2: "L", 3: "G"} # optional
+COUNTER_MAP = {1: "A", 2: "L", 3: "G"} # optional
 
 # Initialize app
 app = Flask(__name__, static_folder='static', template_folder='templates')
