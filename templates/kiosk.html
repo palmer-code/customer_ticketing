@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Kiosk - Take Ticket</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: Arial, sans-serif; text-align:center; padding:20px; }
+    .title { font-size:32px; margin-bottom:20px; }
+    .btn { font-size:28px; padding:20px; margin:10px; width:80%; max-width:600px; }
+    #msg { margin-top:20px; font-size:20px; color:green; }
+  </style>
+</head>
+<body>
+  <div class="title">Welcome — Please select your query</div>
+  {% for key, meta in categories.items() %}
+    <button class="btn" onclick="take('{{key}}')">{{meta.label}}</button><br/>
+  {% endfor %}
+  <div id="msg"></div>
+
+<script>
+function take(prefix) {
+  fetch('/kiosk/take/' + prefix, {method: 'POST'})
+    .then(r => r.json())
+    .then(j => {
+      if (j.ok) {
+        document.getElementById('msg').innerText = 'Your ticket: ' + j.ticket + ' — printed. Please wait.';
+      } else {
+        document.getElementById('msg').innerText = 'Error: ' + (j.error || 'unknown');
+      }
+    })
+    .catch(e => document.getElementById('msg').innerText = 'Network error');
+}
+</script>
+</body>
+</html>
