@@ -5,18 +5,43 @@
   <title>Operator - Counter {{counter}}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body { font-family: Arial, sans-serif; padding:20px; text-align:center; }
+    body { font-family: Arial, sans-serif; padding:0; margin:0; }
+    .container { display: flex; min-height: 100vh; }
+    .sidebar {
+      width: 260px;
+      background: #f0f0f0;
+      padding: 20px 10px;
+      text-align: left;
+      border-right: 1px solid #ccc;
+    }
+    .main {
+      flex: 1;
+      padding: 20px;
+      text-align: center;
+    }
     h1 { font-size:28px; }
     button { font-size:24px; padding:16px 24px; margin:10px; }
     #now { font-size:36px; margin-top:20px; color:blue; }
     #status { margin-top:20px; }
+    #ticket-list { margin-top: 10px; }
+    #ticket-list li { font-size: 22px; margin-bottom: 8px; }
   </style>
 </head>
 <body>
-  <h1>Counter {{counter}}</h1>
-  <button onclick="callNext()">Call Next</button>
-  <div id="now">Now Serving: -</div>
-  <div id="status"></div>
+  <div class="container">
+    <div class="sidebar">
+      <h2>New Tickets</h2>
+      <ul id="ticket-list">
+        <li>Loading...</li>
+      </ul>
+    </div>
+    <div class="main">
+      <h1>Counter {{counter}}</h1>
+      <button onclick="callNext()">Call Next</button>
+      <div id="now">Now Serving: -</div>
+      <div id="status"></div>
+    </div>
+  </div>
 <script>
 function callNext() {
   fetch('/operator/{{counter}}/call', {method: 'POST'})
@@ -25,12 +50,38 @@ function callNext() {
       if (j.ok) {
         document.getElementById('now').innerText = 'Now Serving: ' + j.ticket;
         document.getElementById('status').innerText = 'Announced: ' + j.announce;
+        loadTickets(); // Refresh ticket list after serving
       } else {
         document.getElementById('status').innerText = j.message || 'No tickets';
       }
     })
     .catch(e => document.getElementById('status').innerText = 'Network error');
 }
+
+function loadTickets() {
+  fetch('/operator/{{counter}}/new_tickets')
+    .then(r => r.json())
+    .then(tickets => {
+      const list = document.getElementById('ticket-list');
+      list.innerHTML = '';
+      if (tickets.length === 0) {
+        list.innerHTML = '<li>No new tickets</li>';
+      } else {
+        tickets.forEach(t => {
+          const li = document.createElement('li');
+          li.innerText = t;
+          list.appendChild(li);
+        });
+      }
+    })
+    .catch(e => {
+      document.getElementById('ticket-list').innerHTML = '<li>Error loading tickets</li>';
+    });
+}
+
+// Initial load and refresh every 10 seconds
+loadTickets();
+setInterval(loadTickets, 10000);
 </script>
 </body>
 </html>

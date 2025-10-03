@@ -29,3 +29,17 @@ def call_next(counter):
     announce_text = f"Ticket {prefix}{num}, please proceed to counter {counter}"
     tts_say(announce_text)
     return jsonify({"ok": True, "ticket": f"{prefix}{num}", "counter": counter, "announce": announce_text})
+
+@bp.route('/<int:counter>/new_tickets')
+def new_tickets(counter):
+    """
+    Return a JSON array of unserved ticket numbers (e.g., ["A101", "B202"]) 
+    for the given counter, based on the in-memory queues.
+    """
+    tickets = []
+    for prefix, meta in CATEGORIES.items():
+        if meta.get('default_counter') == counter:
+            # queues[prefix] is a list of (num, assigned_counter)
+            for num, assigned_counter in queues[prefix]:
+                tickets.append(f"{prefix}{num}")
+    return jsonify(tickets)
