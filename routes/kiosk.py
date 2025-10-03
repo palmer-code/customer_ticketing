@@ -8,6 +8,19 @@ bp = Blueprint('kiosk', __name__)
 queues = {k: [] for k in CATEGORIES.keys()}
 ticket_counters = {}
 
+def assign_counter_for_category(category_code, queues):
+    meta = CATEGORIES[category_code]
+    eligible_counters = meta["counters"]
+    # Count tickets assigned to each eligible counter across all categories
+    counter_loads = {c: 0 for c in eligible_counters}
+    for queue in queues.values():
+        for _, assigned_counter in queue:
+            if assigned_counter in counter_loads:
+                counter_loads[assigned_counter] += 1
+    # Find the counter with the fewest tickets
+    min_counter = min(eligible_counters, key=lambda c: counter_loads[c])
+    return min_counter
+
 @bp.route('/kiosk')
 def kiosk():
     return render_template('kiosk.html', categories=CATEGORIES)
@@ -19,7 +32,8 @@ def take_ticket(prefix):
     # increment ticket number
     ticket_counters[prefix] = ticket_counters.get(prefix, 100) + 1
     num = ticket_counters[prefix]
-    counter = CATEGORIES[prefix]['default_counter']
+    # Use the new assignment logic
+    counter = assign_counter_for_category(prefix, queues)
     queues[prefix].append((num, counter))
     add_ticket_to_db(prefix, num, counter)
     threading.Thread(target=print_ticket, args=(prefix, num, counter), daemon=True).start()
