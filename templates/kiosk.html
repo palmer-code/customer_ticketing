@@ -5,18 +5,32 @@
   <title>Kiosk - Take Ticket</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body { font-family: Arial, sans-serif; text-align:center; padding:20px; }
+    .leftSection { font-family: Arial, sans-serif; text-align:left; padding:20px; }
+    .rightSection { font-family: Arial, sans-serif; text-align:right; padding:20px; }
+    .midSection { font-family: Arial, sans-serif; text-align:center; padding:20px; }
     .title { font-size:32px; margin-bottom:20px; }
     .btn { font-size:28px; padding:20px; margin:10px; width:80%; max-width:600px; }
     #msg { margin-top:20px; font-size:20px; color:green; }
+    #rightMsg {font-size:32px; color: green;}
   </style>
 </head>
 <body>
-  <div class="title"><i><b>Welcome To Safaricom Two Rivers</b></i></div>
+  <section class="midSection">
+    <div class="title"><i><b>Welcome To Safaricom Two Rivers</b></i></div>
   {% for key, meta in categories.items() %}
     <button class="btn" onclick="take('{{key}}')">{{meta.label}}</button><br/>
   {% endfor %}
   <div id="msg"></div>
+
+  </section>
+  
+  <section class="leftSection">
+    <p>left section</p>
+  </section>
+
+  <section class="rightSection">
+    <p id="rightMsg"><b>FOR MPESA WITHDRAWS AND DEPOSITS,<br> KINDLY PROCEED TO THE MPESA BOOTH</b></p>
+  </section>
 
 <script>
 function take(prefix) {
