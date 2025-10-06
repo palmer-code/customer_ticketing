@@ -1,6 +1,15 @@
 import threading, pyttsx3
 
 tts_engine = pyttsx3.init()
+
+voices = tts_engine.getProperty('voices')
+
+# Choose a female-sounding voice (e.g., index 1)
+for voice in voices:
+    if "female" in voice.name.lower() or "zira" in voice.name.lower():
+        tts_engine.setProperty('voice', voice.id)
+        break
+
 tts_lock = threading.Lock()
 
 def tts_say(text):
