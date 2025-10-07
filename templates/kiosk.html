@@ -5,32 +5,185 @@
   <title>Kiosk - Take Ticket</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body { font-family: Arial, sans-serif; text-align:center; padding:20px; }
+    body {
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  font-family: Arial, sans-serif;
+  /* Safaricom green gradient background */
+  background: linear-gradient(135deg, #00953b 0%, #b6e2c6 100%);
+  /* Optional: subtle pattern overlay */
+  background-image:
+    linear-gradient(135deg, #00953b 0%, #b6e2c6 100%),
+    url('https://upload.wikimedia.org/wikipedia/commons/7/7e/Safaricom_logo.png');
+  background-repeat: no-repeat;
+  background-position: bottom right;
+  background-size: 180px, cover;
+}
+    .main-flex {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      gap: 40px;
+    }
+    .midSection {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 20px 40px;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 4px 16px rgba(26,35,126,0.08);
+    }
     .title { font-size:32px; margin-bottom:20px; }
     .btn { font-size:28px; padding:20px; margin:10px; width:80%; max-width:600px; }
-    #msg { margin-top:20px; font-size:20px; color:green; }
+    .rightSection {
+      font-family: Arial, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px 40px;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 4px 16px rgba(26,35,126,0.08);
+      min-width: 400px;
+      min-height: 200px;
+      height: fit-content;
+    }
+    #rightMsg {
+      font-size: 32px;
+      color: #1b8a1b;
+      font-weight: bold;
+      text-align: center;
+      line-height: 1.3;
+    }
+    /* Modal styles */
+    .modal-bg {
+      display: none;
+      position: fixed;
+      z-index: 9999;
+      left: 0; top: 0; width: 100vw; height: 100vh;
+      background: rgba(0,0,0,0.4);
+      justify-content: center;
+      align-items: center;
+    }
+    .modal-bg.active { display: flex; }
+    .modal-box {
+      background: #fff;
+      border-radius: 16px;
+      padding: 40px 30px 30px 30px;
+      min-width: 340px;
+      max-width: 90vw;
+      text-align: center;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+      font-size: 28px;
+      font-family: Arial, sans-serif;
+      position: relative;
+    }
+    .modal-btns {
+      margin-top: 30px;
+      display: flex;
+      justify-content: center;
+      gap: 30px;
+    }
+    .modal-btn {
+      font-size: 26px;
+      padding: 12px 36px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: background 0.2s;
+    }
+    .modal-btn.confirm { background: #1b8a1b; color: #fff; }
+    .modal-btn.cancel { background: #d32f2f; color: #fff; }
+    .modal-btn.ok { background: #3949ab; color: #fff; }
   </style>
 </head>
 <body>
-  <div class="title"><i><b>Welcome To Safaricom Two Rivers</b></i></div>
-  {% for key, meta in categories.items() %}
-    <button class="btn" onclick="take('{{key}}')">{{meta.label}}</button><br/>
-  {% endfor %}
-  <div id="msg"></div>
+  <div class="main-flex">
+    <section class="midSection">
+      <div class="title"><i><b>Welcome To Safaricom Two Rivers</b></i></div>
+      {% for key, meta in categories.items() %}
+        <button class="btn" onclick="showConfirm('{{key}}', '{{meta.label}}')">{{meta.label}}</button><br/>
+      {% endfor %}
+    </section>
+    <section class="rightSection">
+      <p id="rightMsg">
+        FOR MPESA WITHDRAWS AND DEPOSITS,<br>
+        KINDLY PROCEED TO THE MPESA BOOTH
+      </p>
+    </section>
+  </div>
 
-<script>
-function take(prefix) {
-  fetch('/kiosk/take/' + prefix, {method: 'POST'})
-    .then(r => r.json())
-    .then(j => {
-      if (j.ok) {
-        document.getElementById('msg').innerText = 'Your ticket: ' + j.ticket + ' — printed. Please wait.';
-      } else {
-        document.getElementById('msg').innerText = 'Error: ' + (j.error || 'unknown');
+  <!-- Modal Popup -->
+  <div class="modal-bg" id="modalBg" onclick="modalBgClick(event)">
+    <div class="modal-box" id="modalBox">
+      <div id="modalMsg"></div>
+      <div class="modal-btns" id="modalBtns"></div>
+    </div>
+  </div>
+
+  <script>
+    let pendingPrefix = null;
+    let infoTimeout = null;
+
+    function showConfirm(prefix, label) {
+      pendingPrefix = prefix;
+      document.getElementById('modalMsg').innerHTML = `Print ticket for <b>${label}</b>?`;
+      document.getElementById('modalBtns').innerHTML = `
+        <button class="modal-btn confirm" onclick="confirmTicket()">Confirm</button>
+        <button class="modal-btn cancel" onclick="cancelTicket()">Cancel</button>
+      `;
+      document.getElementById('modalBg').classList.add('active');
+      clearTimeout(infoTimeout);
+    }
+
+    function confirmTicket() {
+      if (!pendingPrefix) return;
+      document.getElementById('modalMsg').innerHTML = 'Printing your ticket...';
+      document.getElementById('modalBtns').innerHTML = '';
+      fetch('/kiosk/take/' + pendingPrefix, {method: 'POST'})
+        .then(r => r.json())
+        .then(j => {
+          if (j.ok) {
+            showInfo(`Your ticket: <b>${j.ticket}</b> — printed. Please wait.`);
+          } else {
+            showInfo('Error: ' + (j.error || 'unknown'));
+          }
+        })
+        .catch(e => showInfo('Network error'));
+      pendingPrefix = null;
+    }
+
+    function cancelTicket() {
+      pendingPrefix = null;
+      closeModal();
+    }
+
+    function showInfo(msg) {
+      document.getElementById('modalMsg').innerHTML = msg;
+      document.getElementById('modalBtns').innerHTML = `
+        <button class="modal-btn ok" onclick="closeModal()">OK</button>
+      `;
+      document.getElementById('modalBg').onclick = modalBgClick;
+      clearTimeout(infoTimeout);
+      infoTimeout = setTimeout(closeModal, 30000); // Auto-close after 30 seconds
+    }
+
+    function closeModal() {
+      document.getElementById('modalBg').classList.remove('active');
+      document.getElementById('modalMsg').innerHTML = '';
+      document.getElementById('modalBtns').innerHTML = '';
+      pendingPrefix = null;
+      clearTimeout(infoTimeout);
+    }
+
+    function modalBgClick(event) {
+      if (event.target.id === 'modalBg' && document.getElementById('modalBtns').children.length === 1) {
+        closeModal();
       }
-    })
-    .catch(e => document.getElementById('msg').innerText = 'Network error');
-}
-</script>
+    }
+  </script>
 </body>
 </html>
